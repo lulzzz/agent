@@ -11,10 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"code.cloudfoundry.org/archiver/extractor"
+	"github.com/cheggaaa/pb"
 	"github.com/nightlyone/lockfile"
-	"gopkg.in/cheggaaa/pb.v1"
-
 	"github.com/subutai-io/agent/config"
 	"github.com/subutai-io/agent/db"
 	"github.com/subutai-io/agent/lib/container"
@@ -24,79 +22,115 @@ import (
 )
 
 var (
-	lock   lockfile.Lockfile
-	owners = []string{"subutai", "jenkins", "docker", ""}
+	lock lockfile.Lockfile
 )
 
 type templ struct {
-	name      string
-	file      string
-	version   string
-	branch    string
-	id        string
-	md5       string
-	owner     []string
-	signature map[string]string
-}
-
-type metainfo struct {
-	ID    string            `json:"id"`
-	Name  string            `json:"name"`
-	Owner []string          `json:"owner"`
-	File  string            `json:"filename"`
-	Signs map[string]string `json:"signature"`
-	Hash  struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Owner      []string          `json:"owner"`
+	Version    string            `json:"version"`
+	File       string            `json:"filename"`
+	Signatures map[string]string `json:"signature"`
+	Branch     string
+	Local      bool
+	Hash       struct {
 		Md5    string
 		Sha256 string
 	} `json:"hash"`
 }
 
-// templateID retrieves the id of a template on global repository with specified version.
-// If certain version is not set, then latest id will be returned
-func templateID(t *templ, kurjun *http.Client, token string) {
-	var meta []metainfo
-
-	url := config.CDN.Kurjun + "/template/info?name=" + t.name + "&token=" + token
-	if t.name == "management" && len(t.branch) != 0 {
-		url = config.CDN.Kurjun + "/template/info?name=" + t.name + "&version=" + t.version + "-" + t.branch + "&token=" + token
-	} else if t.name == "management" {
-		url = config.CDN.Kurjun + "/template/info?name=" + t.name + "&version=" + t.version + "&token=" + token
+func (t *templ) getInfo(kurjun *http.Client, token string) error {
+	var list []templ
+	url := config.CDN.Kurjun + "/template/info?name=" + t.Name + "&version=" + t.Version + "&token=" + token
+	if len(t.ID) != 0 {
+		url = config.CDN.Kurjun + "/template/info?id=" + t.ID + "&token=" + token
 	}
-
 	response, err := kurjun.Get(url)
-	log.Check(log.ErrorLevel, "Retrieving id, get: "+url, err)
+	log.Debug(url)
+	if err != nil {
+		return err
+	}
 	defer response.Body.Close()
 
-	if err == nil && response.StatusCode == 404 && t.name == "management" {
-		log.Warn("Requested management version not found, getting latest available")
-		response, err = kurjun.Get(config.CDN.Kurjun + "/template/info?name=" + t.name + "&version=" + t.branch + "&token=" + token)
+	if err == nil && len(t.ID) == 0 && response.StatusCode == 404 {
+		log.Warn("Requested template version not found, getting available")
+		log.Debug(config.CDN.Kurjun + "/template/info?name=" + t.Name + "&token=" + token)
+		response, err = kurjun.Get(config.CDN.Kurjun + "/template/info?name=" + t.Name + "&token=" + token)
+		if err != nil {
+			return err
+		}
 	}
-	if log.Check(log.WarnLevel, "Getting kurjun response", err) || response.StatusCode != 200 {
-		return
+	if response.StatusCode != 200 {
+		return err
 	}
-
 	defer response.Body.Close()
+
 	body, err := ioutil.ReadAll(response.Body)
-
-	if err != nil || log.Check(log.WarnLevel, "Parsing response body", json.Unmarshal(body, &meta)) {
-		return
+	if err != nil || log.Check(log.WarnLevel, "Parsing response body", json.Unmarshal(body, &list)) {
+		return err
 	}
-
-	if len(meta) == 0 {
-		return
+	if len(list) > 1 {
+		fmt.Printf("There are multiple templates named %s in repository\nPlease run `subutai import id:<id>` with id from list:\n" + t.Name)
+		for _, v := range list {
+			fmt.Printf("%s (owner: %s)\n", v.ID, v.Owner)
+		}
+		os.Exit(0)
 	}
-
-	if t.name != meta[0].Name {
-		log.Info("Found: " + t.name + " -> " + meta[0].Name)
-		t.name = meta[0].Name
-	}
-	t.id = meta[0].ID
-	t.file = meta[0].File
-	t.md5 = meta[0].Hash.Md5
-	t.signature = meta[0].Signs
+	*t = list[0]
+	log.Debug("Name: " + t.Name + ", version: " + t.Version)
+	return nil
 }
 
-// md5sum returns MD5 hash sum of specified file
+func (t *templ) verifySignature() error {
+	if len(t.Signatures) == 0 {
+		return nil
+	}
+	for owner, signature := range t.Signatures {
+		for _, key := range gpg.KurjunUserPK(owner) {
+			if t.ID == gpg.VerifySignature(key, signature) {
+				log.Info("Template's owner signature verified")
+				log.Debug("Signature belongs to " + owner)
+				return nil
+			}
+			log.Debug("Signature does not match with template id")
+		}
+	}
+	return fmt.Errorf("Failed to verify signature")
+}
+
+func (t *templ) verifyHash() error {
+	hash := md5sum(config.Agent.LxcPrefix + "tmpdir/" + t.ID)
+	if t.ID == hash || t.Hash.Md5 == hash {
+		return nil
+	}
+	return fmt.Errorf("Failed to verify hash sum")
+}
+
+func (t *templ) exists() bool {
+	var response string
+	files, _ := ioutil.ReadDir(config.Agent.LxcPrefix + "tmpdir")
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), t.Name) {
+			if len(t.ID) == 0 {
+				fmt.Print("Cannot verify local template. Trust anyway? (y/n)")
+				_, err := fmt.Scanln(&response)
+				log.Check(log.FatalLevel, "Reading input", err)
+				if response == "y" {
+					t.File = f.Name()
+					return true
+				}
+				return false
+			}
+			hash := md5sum(config.Agent.LxcPrefix + "tmpdir/" + f.Name())
+			if t.ID == hash || t.Hash.Md5 == hash {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func md5sum(filePath string) string {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -109,117 +143,6 @@ func md5sum(filePath string) string {
 		return ""
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil))
-}
-
-// checkLocal reads content of local templates folder to check if required archive is present there
-func checkLocal(t *templ) bool {
-	var response string
-	files, _ := ioutil.ReadDir(config.Agent.LxcPrefix + "tmpdir")
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), t.name+"-subutai-template") {
-			if len(t.id) == 0 {
-				fmt.Print("Cannot verify local template. Trust anyway? (y/n)")
-				_, err := fmt.Scanln(&response)
-				log.Check(log.FatalLevel, "Reading input", err)
-				if response == "y" {
-					t.file = f.Name()
-					return true
-				}
-				return false
-			}
-			hash := md5sum(config.Agent.LxcPrefix + "tmpdir/" + f.Name())
-			if t.id == hash || t.md5 == hash {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// download gets template archive from global repository
-func download(t templ, kurjun *http.Client, token string, torrent bool) bool {
-	if len(t.id) == 0 {
-		return false
-	}
-	out, err := os.Create(config.Agent.LxcPrefix + "tmpdir/" + t.file)
-	log.Check(log.FatalLevel, "Creating file "+t.file, err)
-	defer out.Close()
-
-	url := config.CDN.Kurjun + "/template/download?id=" + t.id + "&token=" + token
-
-	if len(t.owner) > 0 {
-		url = config.CDN.Kurjun + "/template/" + t.owner[0] + "/" + t.file + "?token=" + token
-	}
-	response, err := kurjun.Get(url)
-	log.Check(log.FatalLevel, "Getting "+url, err)
-
-	defer response.Body.Close()
-	bar := pb.New(int(response.ContentLength)).SetUnits(pb.U_BYTES)
-	if response.ContentLength <= 0 {
-		bar.NotPrint = true
-	}
-	bar.Start()
-	rd := bar.NewProxyReader(response.Body)
-	_, err = io.Copy(out, rd)
-	for c := 0; err != nil && c < 5; _, err = io.Copy(out, rd) {
-		log.Info("Download interrupted, retrying")
-		time.Sleep(3 * time.Second)
-		c++
-
-		//Repeating GET request to CDN, while need to continue interrupted download
-		out, err = os.Create(config.Agent.LxcPrefix + "tmpdir/" + t.file)
-		log.Check(log.FatalLevel, "Creating file "+t.file, err)
-		defer out.Close()
-		response, err = kurjun.Get(url)
-		log.Check(log.FatalLevel, "Getting "+url, err)
-		defer response.Body.Close()
-		bar = pb.New(int(response.ContentLength)).SetUnits(pb.U_BYTES)
-		bar.Start()
-		rd = bar.NewProxyReader(response.Body)
-	}
-	log.Check(log.FatalLevel, "Writing response body to file", err)
-	bar.Finish()
-
-	hash := md5sum(config.Agent.LxcPrefix + "tmpdir/" + t.file)
-	if t.id == hash || t.md5 == hash {
-		return true
-	}
-	return false
-}
-
-// idToName retrieves template name from global repository by passed id string
-func idToName(id string, kurjun *http.Client, token string) string {
-	bolt, err := db.New()
-	log.Check(log.WarnLevel, "Opening database", err)
-	if name := bolt.TemplateName(id); len(name) > 0 {
-		log.Check(log.WarnLevel, "Closing database", bolt.Close())
-		return name
-	}
-	log.Check(log.WarnLevel, "Closing database", bolt.Close())
-
-	var meta []metainfo
-
-	//Since only kurjun knows template's ID, we cannot define if we have template already installed in system by ID as we do it by name, so unreachable kurjun in this case is a deadend for us
-	//To omit this issue we should add ID into template config and use this ID as a "primary key" to any request
-	response, err := kurjun.Get(config.CDN.Kurjun + "/template/info?id=" + id + "&token=" + token)
-	log.Check(log.ErrorLevel, "Getting kurjun response", err)
-	defer response.Body.Close()
-
-	body, err := ioutil.ReadAll(response.Body)
-
-	if string(body) == "Not found" {
-		log.Error("Template with id \"" + id + "\" not found")
-	}
-	if log.Check(log.WarnLevel, "Parsing response body", json.Unmarshal(body, &meta)) {
-		var oldmeta metainfo
-		log.Check(log.ErrorLevel, "Parsing response body from old Kurjun server", json.Unmarshal(body, &oldmeta))
-		meta = append(meta, oldmeta)
-	}
-
-	if len(meta) > 0 {
-		return meta[0].Name
-	}
-	return ""
 }
 
 // lockSubutai creates lock file for period of import for certain template to prevent conflicts during write operation
@@ -239,13 +162,46 @@ func lockSubutai(file string) bool {
 		}
 		return false
 	}
-
 	return true
 }
 
 // unlockSubutai removes lock file
 func unlockSubutai() {
 	lock.Unlock()
+}
+
+func (t *templ) download(kurjun *http.Client, token string, torrent bool) error {
+	if len(t.ID) == 0 {
+		return fmt.Errorf("Download failed: empty template id")
+	}
+	out, err := os.Create(config.Agent.LxcPrefix + "tmpdir/" + t.ID)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	url := config.CDN.Kurjun + "/template/download?id=" + t.ID + "&token=" + token
+	if len(t.Owner) > 0 {
+		url = config.CDN.Kurjun + "/template/download?id=" + t.ID + "&owner=" + t.Owner[0] + "&token=" + token
+	}
+	response, err := kurjun.Get(url)
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+	bar := pb.New(int(response.ContentLength)).SetUnits(pb.U_BYTES)
+	if response.ContentLength <= 0 {
+		bar.NotPrint = true
+	}
+	bar.Start()
+	rd := bar.NewProxyReader(response.Body)
+	_, err = io.Copy(out, rd)
+	if err != nil {
+		return err
+	}
+	bar.Finish()
+	return nil
 }
 
 // LxcImport function deploys a Subutai template on a Resource Host. The import algorithm works with both the global template repository and a local directory
@@ -264,165 +220,99 @@ func unlockSubutai() {
 //
 // `subutai import management` is a special operation which differs from the import of other templates. Besides the usual template deployment operations,
 // "import management" demotes the template, starts its container, transforms the host network, and forwards a few host ports, etc.
-func LxcImport(name, version, token string, torrent bool) {
-	var kurjun *http.Client
+func LxcImport(name, version, token string) {
+	// var kurjun *http.Client
+	var t templ
+	kurjun, err := config.CheckKurjun()
+	if err != nil || kurjun == nil {
+		log.Warn(err)
+		t.Local = true
+	}
 
 	if container.IsContainer(name) && name == "management" && len(token) > 1 {
 		gpg.ExchageAndEncrypt("management", token)
 		return
 	}
 
-	if id := strings.Split(name, "id:"); len(id) > 1 {
-		kurjun, _ = config.CheckKurjun()
-		name = idToName(id[1], kurjun, token)
+	if container.IsContainer(t.Name) {
+		log.Info(t.Name + " instance exist")
+		return
 	}
 
-	var t templ
-
-	t.name = name
-	if line := strings.Split(t.name, "/"); len(line) > 1 {
-		t.name = line[1]
-		t.owner = append(t.owner, line[0])
+	if id := strings.Split(name, "id:"); len(id) > 1 {
+		t.ID = id[1]
+	} else if line := strings.Split(t.Name, "/"); len(line) > 1 {
+		t.Owner = append(t.Owner, line[0])
+		t.Name = line[1]
+	} else {
+		t.Name = name
 	}
 
 	log.Info("Importing " + name)
-	for !lockSubutai(t.name + ".import") {
-		time.Sleep(time.Second * 1)
+	for !lockSubutai(t.Name + ".import") {
+		time.Sleep(time.Second)
 	}
 	defer unlockSubutai()
 
-	if container.IsContainer(t.name) {
-		log.Info(t.name + " instance exist")
-		return
-	}
-
-	t.version = config.Template.Version
-	t.branch = config.Template.Branch
+	t.Version = config.Template.Version
+	t.Branch = config.Template.Branch
 	if len(version) != 0 {
-		if strings.Contains(version, "-") {
-			verstr := strings.Split(version, "-")
-			if len(verstr) == 2 {
-				t.version = verstr[0]
-				t.branch = verstr[1]
-			} else {
-				log.Error("Invalid version")
-			}
-		} else {
-			if strings.Contains(version, ".") {
-				t.version = version
-				t.branch = config.Template.Branch
-			} else {
-				t.version = config.Template.Version
-				t.branch = version
-			}
+		t.Version = version
+	}
+
+	log.Info("Version: " + t.Version + ", branch: " + t.Branch)
+
+	if !t.Local {
+		if err := t.getInfo(kurjun, token); err != nil {
+			log.Warn(err)
+			t.Local = true
 		}
 	}
 
-	log.Info("Version: " + t.version + ", branch: " + t.branch)
-
-	if t.branch == "" || t.name != "management" {
-		t.file = t.name + "-subutai-template_" + t.version + "_" + config.Template.Arch + ".tar.gz"
-	} else {
-		t.file = t.name + "-subutai-template_" + t.version + "-" + t.branch + "_" + config.Template.Arch + ".tar.gz"
-	}
-
-	if kurjun == nil {
-		kurjun, _ = config.CheckKurjun()
-	}
-	if kurjun != nil {
-		templateID(&t, kurjun, token)
-	} else {
-		log.Info("Trying to import from local storage")
-	}
-
-	if len(t.id) != 0 && len(t.signature) == 0 {
+	if !t.Local && len(t.Signatures) == 0 {
 		log.Error("Template is not signed")
-	}
-
-	log.Check(log.ErrorLevel, "Verifying template signature", verifySignature(t.id, t.signature))
-
-	if !checkLocal(&t) {
-		log.Info("Downloading " + t.name)
-		downloaded := false
-		if len(t.owner) == 0 {
-			for _, owner := range owners {
-				if t.owner = []string{owner}; len(owner) == 0 {
-					t.owner = []string{}
-				}
-				if download(t, kurjun, token, torrent) {
-					downloaded = true
-					break
-				}
-			}
-		}
-		if !downloaded && !download(t, kurjun, token, torrent) {
-			log.Error("Failed to download or verify template " + t.name)
+	} else if !t.Local {
+		if err := t.verifySignature(); err != nil {
+			log.Error(err)
 		} else {
+			if err := t.download(kurjun, token, false); err != nil {
+				log.Error(err)
+			}
+			if err := t.verifyHash(); err != nil {
+				log.Error(err)
+			}
 			log.Info("File integrity verified")
 		}
+	} else if t.Local && !t.exists() {
+		log.Error("Cannot find template")
 	}
 
-	log.Info("Unpacking template " + t.name)
-	log.Debug(config.Agent.LxcPrefix + "tmpdir/ " + t.file + " to " + t.name)
-	tgz := extractor.NewTgz()
-	templdir := config.Agent.LxcPrefix + "tmpdir/" + t.name
-	log.Check(log.FatalLevel, "Extracting tgz", tgz.Extract(config.Agent.LxcPrefix+"tmpdir/"+t.file, templdir))
-	parent := container.GetConfigItem(templdir+"/config", "subutai.parent")
-	if parent != "" && parent != t.name && !container.IsTemplate(parent) {
+	log.Info("Unpacking template " + t.Name)
+	parent, err := template.Extract(t.ID, t.Name)
+	log.Check(log.ErrorLevel, "Extracting tar archive", err)
+	if len(parent) != 0 {
 		log.Info("Parent template required: " + parent)
-		LxcImport(parent, "", token, torrent)
+		LxcImport(parent, "", token)
 	}
-
-	log.Info("Installing template " + t.name)
-	template.Install(parent, t.name)
-	// TODO following lines kept for back compatibility with old templates, should be deleted when all templates will be replaced.
-	os.Rename(config.Agent.LxcPrefix+t.name+"/"+t.name+"-home", config.Agent.LxcPrefix+t.name+"/home")
-	os.Rename(config.Agent.LxcPrefix+t.name+"/"+t.name+"-var", config.Agent.LxcPrefix+t.name+"/var")
-	os.Rename(config.Agent.LxcPrefix+t.name+"/"+t.name+"-opt", config.Agent.LxcPrefix+t.name+"/opt")
-	log.Check(log.FatalLevel, "Removing temp dir "+templdir, os.RemoveAll(templdir))
-
-	if t.name == "management" {
-		template.MngInit()
-		return
-	}
-
-	container.SetContainerConf(t.name, [][]string{
-		{"lxc.include", ""},
-	})
-
-	container.SetContainerConf(t.name, [][]string{
-		{"lxc.rootfs", config.Agent.LxcPrefix + t.name + "/rootfs"},
-		{"lxc.rootfs.mount", config.Agent.LxcPrefix + t.name + "/rootfs"},
-		{"lxc.mount", config.Agent.LxcPrefix + t.name + "/fstab"},
-		{"lxc.hook.pre-start", ""},
-		{"lxc.include", config.Agent.AppPrefix + "share/lxc/config/ubuntu.common.conf"},
-		{"lxc.include", config.Agent.AppPrefix + "share/lxc/config/ubuntu.userns.conf"},
-		{"subutai.config.path", config.Agent.AppPrefix + "etc"},
-		{"lxc.network.script.up", config.Agent.AppPrefix + "bin/create_ovs_interface"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + t.name + "/home home none bind,rw 0 0"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + t.name + "/opt opt none bind,rw 0 0"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + t.name + "/var var none bind,rw 0 0"},
-	})
 
 	bolt, err := db.New()
 	log.Check(log.WarnLevel, "Opening database", err)
-	log.Check(log.WarnLevel, "Writing container data to database", bolt.TemplateAdd(t.name, t.id))
+	log.Check(log.WarnLevel, "Writing container data to database", bolt.TemplateAdd(t.Name, t.ID))
+	parentID := bolt.TemplateID(parent)
 	log.Check(log.WarnLevel, "Closing database", bolt.Close())
+
+	log.Info("Installing template " + t.ID)
+	template.Deploy(parentID, t.ID)
+
+	log.Info("Setting configuration")
+	if t.Name == "management" {
+		template.MngInit(t.ID)
+	} else {
+		template.SetConfig(t.ID, t.Name)
+	}
 }
 
-func verifySignature(id string, list map[string]string) error {
-	if len(list) == 0 {
-		return nil
-	}
-	for owner, signature := range list {
-		for _, key := range gpg.KurjunUserPK(owner) {
-			if id == gpg.VerifySignature(key, signature) {
-				log.Info("Template's owner signature verified")
-				log.Debug("Signature belongs to " + owner)
-				return nil
-			}
-			log.Debug("Signature does not match with template id")
-		}
-	}
-	return fmt.Errorf("Failed to verify signature")
-}
+/*
+fs: uuid
+commands: name
+*/

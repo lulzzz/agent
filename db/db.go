@@ -193,6 +193,16 @@ func (i *Instance) TemplateName(id string) (name string) {
 	return
 }
 
+func (i *Instance) TemplateID(name string) (id string) {
+	i.db.View(func(tx *bolt.Tx) error {
+		if b := tx.Bucket(templates); b != nil {
+			id = string(b.Get([]byte(name)))
+		}
+		return nil
+	})
+	return
+}
+
 func (i *Instance) ContainerAdd(name string, options map[string]string) (err error) {
 	i.db.Update(func(tx *bolt.Tx) error {
 		if b := tx.Bucket(containers); b != nil {
