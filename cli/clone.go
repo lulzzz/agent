@@ -26,11 +26,16 @@ func LxcClone(parent, child, envID, addr, token, kurjToken string) {
 	meta := make(map[string]string)
 	if id := strings.Split(parent, "id:"); len(id) > 1 {
 		parent = id[1]
+	} else {
+		bolt, err := db.New()
+		log.Check(log.WarnLevel, "Opening database", err)
+		parent = bolt.TemplateID(parent)
+		log.Check(log.WarnLevel, "Closing database", bolt.Close())
 	}
 	meta["parent"] = parent
 
 	if !container.IsTemplate(parent) {
-		LxcImport(parent, "", kurjToken)
+		LxcImport("id:"+parent, "", kurjToken)
 	}
 	if container.IsContainer(child) {
 		log.Error("Container " + child + " already exist")

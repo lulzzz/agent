@@ -73,7 +73,7 @@ func (t *templ) getInfo(kurjun *http.Client, token string) error {
 	if len(list) > 1 {
 		fmt.Printf("There are multiple templates named %s in repository\nPlease run `subutai import id:<id>` with id from list:\n" + t.Name)
 		for _, v := range list {
-			fmt.Printf("%s (owner: %s)\n", v.ID, v.Owner)
+			fmt.Printf("%s (%s)\n", v.ID, v.File)
 		}
 		os.Exit(0)
 	}
@@ -221,7 +221,6 @@ func (t *templ) download(kurjun *http.Client, token string, torrent bool) error 
 // `subutai import management` is a special operation which differs from the import of other templates. Besides the usual template deployment operations,
 // "import management" demotes the template, starts its container, transforms the host network, and forwards a few host ports, etc.
 func LxcImport(name, version, token string) {
-	// var kurjun *http.Client
 	var t templ
 	kurjun, err := config.CheckKurjun()
 	if err != nil || kurjun == nil {
@@ -229,23 +228,28 @@ func LxcImport(name, version, token string) {
 		t.Local = true
 	}
 
-	if container.IsContainer(name) && name == "management" && len(token) > 1 {
-		gpg.ExchageAndEncrypt("management", token)
-		return
-	}
-
-	if container.IsContainer(t.Name) {
-		log.Info(t.Name + " instance exist")
-		return
-	}
-
+	bolt, err := db.New()
+	log.Check(log.WarnLevel, "Opening database", err)
 	if id := strings.Split(name, "id:"); len(id) > 1 {
 		t.ID = id[1]
+		t.Name = bolt.TemplateName(t.ID)
 	} else if line := strings.Split(t.Name, "/"); len(line) > 1 {
 		t.Owner = append(t.Owner, line[0])
 		t.Name = line[1]
 	} else {
 		t.Name = name
+		t.ID = bolt.TemplateID(t.Name)
+	}
+	log.Check(log.WarnLevel, "Closing database", bolt.Close())
+
+	if container.IsContainer(t.Name) || container.IsContainer(t.ID) {
+		log.Info(t.Name + " instance exist")
+		return
+	}
+
+	if container.IsContainer(name) && name == "management" && len(token) > 1 {
+		gpg.ExchageAndEncrypt("management", token)
+		return
 	}
 
 	log.Info("Importing " + name)
@@ -295,7 +299,7 @@ func LxcImport(name, version, token string) {
 		LxcImport(parent, "", token)
 	}
 
-	bolt, err := db.New()
+	bolt, err = db.New()
 	log.Check(log.WarnLevel, "Opening database", err)
 	log.Check(log.WarnLevel, "Writing container data to database", bolt.TemplateAdd(t.Name, t.ID))
 	parentID := bolt.TemplateID(parent)
