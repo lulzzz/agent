@@ -24,16 +24,16 @@ import (
 
 // All returns list of all containers
 func All() []string {
-	return lxc.DefinedContainerNames(config.Agent.LxcPrefix + "/containers")
+	return lxc.DefinedContainerNames(config.Agent.LxcPrefix)
 }
 
 // IsTemplate checks if Subutai container is template.
 func IsTemplate(name string) bool {
-	return fs.FileExists(config.Agent.LxcPrefix + "templates/" + name)
+	return fs.DatasetExists(config.Agent.LxcPrefix + "templates/" + name)
 }
 
 func IsContainer(name string) bool {
-	return fs.FileExists(config.Agent.LxcPrefix + "containers/" + name)
+	return fs.DatasetExists(config.Agent.LxcPrefix + "containers/" + name)
 }
 
 // Templates returns list of all templates
@@ -167,7 +167,7 @@ func Freeze(name string) error {
 
 // Unfreeze unpause container processes
 func Unfreeze(name string) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix + "/containers")
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
