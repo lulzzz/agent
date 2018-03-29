@@ -546,7 +546,7 @@ func LxcImport(name, token string, local bool, auxDepList ...string) {
 		return
 	}
 
-	container.SetContainerConf(t.Name, [][]string{
+	container.SetTemplateConf(t.Name, [][]string{
 		{"lxc.include", ""},
 		{"lxc.rootfs", config.Agent.LxcPrefix + "templates/" + t.Name + "/rootfs"},
 		{"lxc.rootfs.mount", config.Agent.LxcPrefix + "templates/" + t.Name + "/rootfs"},

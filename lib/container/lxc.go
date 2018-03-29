@@ -448,9 +448,19 @@ func QuotaNet(name string, size ...string) string {
 	return net.RateLimit(nic, size[0])
 }
 
-// SetContainerConf sets any parameter in the configuration file of the Subutai container.
+// SetTemplateConf sets specified parameter in the configuration file of the Subutai template.
+func SetTemplateConf(template string, conf [][]string) error {
+	confPath := config.Agent.LxcPrefix + "templates/" + template + "/config"
+	return setConf(confPath, conf)
+}
+
+// SetContainerConf sets specified parameter in the configuration file of the Subutai container.
 func SetContainerConf(container string, conf [][]string) error {
 	confPath := config.Agent.LxcPrefix + "containers/" + container + "/config"
+	return setConf(confPath, conf)
+}
+
+func setConf(confPath string, conf [][]string) error {
 	newconf := ""
 
 	file, err := os.Open(confPath)
