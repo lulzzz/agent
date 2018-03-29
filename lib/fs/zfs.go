@@ -14,12 +14,12 @@ func IsDatasetReadOnly(dataset string) bool {
 }
 
 func RemoveDataset(dataset string) {
-	out, err := exec.Command("zfs", "destroy", "-r", dataset).CombinedOutput()
+	out, err := exec.Command("/bin/bash", "-c", "zfs destroy -r "+dataset).CombinedOutput()
 	log.Check(log.ErrorLevel, "Removing zfs dataset "+string(out), err)
 }
 
 func CreateDataset(dataset string) {
-	out, err := exec.Command("zfs", "create", dataset).CombinedOutput()
+	out, err := exec.Command("/bin/bash", "-c", "zfs create "+dataset).CombinedOutput()
 	log.Check(log.ErrorLevel, "Creating zfs dataset "+string(out), err)
 }
 
