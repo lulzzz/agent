@@ -13,7 +13,7 @@ ifeq (${SNAP_NAME}, )
 	SNAP_NAME=subutai
 endif
 
-LDFLAGS=-ldflags "-r /snap/${SNAP_NAME}/current/lib -w -s -X main.version=${VERSION} -X github.com/subutai-io/agent/config.version=${VERSION}"
+LDFLAGS=-ldflags "-r /snap/${SNAP_NAME}/current/lib:/snap/core/current/lib -w -s -X main.version=${VERSION} -X github.com/subutai-io/agent/config.version=${VERSION}"
 
 all:
 	@if [ ! -d "$(GOPATH)/src/github.com/subutai-io/agent" ]; then mkdir -p $(GOPATH)/src/github.com/subutai-io/; ln -s $(shell pwd) $(GOPATH)/src/github.com/subutai-io/agent; fi
