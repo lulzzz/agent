@@ -24,7 +24,7 @@ import (
 
 // All returns list of all containers
 func All() []string {
-	return lxc.DefinedContainerNames(config.Agent.LxcPrefix)
+	return lxc.DefinedContainerNames(config.Agent.LxcPrefix + "/containers")
 }
 
 // IsTemplate checks if Subutai container is template.
@@ -68,7 +68,8 @@ func ContainerOrTemplateExists(name string) bool {
 
 // State returns container stat in human readable format.
 func State(name string) (state string) {
-	if c, err := lxc.NewContainer(name, config.Agent.LxcPrefix); err == nil {
+	if c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers"); err == nil {
+		defer lxc.Release(c)
 		return c.State().String()
 	}
 	return "UNKNOWN"
@@ -83,7 +84,7 @@ func SetApt(name string) {
 	if root != "master" {
 		return
 	}
-	gateway := GetConfigItem(config.Agent.LxcPrefix+name+"/config", "lxc.network.ipv4.gateway")
+	gateway := GetConfigItem(config.Agent.LxcPrefix+"containers/"+name+"/config", "lxc.network.ipv4.gateway")
 	if len(gateway) == 0 {
 		gateway = "10.10.10.254"
 	}
@@ -91,13 +92,13 @@ func SetApt(name string) {
 		"deb http://" + gateway + "/apt/main trusty-updates main restricted universe multiverse\n" +
 		"deb http://" + gateway + "/apt/security trusty-security main restricted universe multiverse\n")
 	log.Check(log.DebugLevel, "Writing apt source repo list",
-		ioutil.WriteFile(config.Agent.LxcPrefix+name+"/rootfs/etc/apt/sources.list", repo, 0644))
+		ioutil.WriteFile(config.Agent.LxcPrefix+"containers/"+name+"/rootfs/etc/apt/sources.list", repo, 0644))
 
 	// kurjun := []byte("deb [arch=amd64,all] http://" + config.Management.Host + ":8330/rest/kurjun/vapt trusty main contrib\n" +
 	// 	"deb [arch=amd64,all] http://" + config.Cdn.Url + ":8330/kurjun/rest/deb trusty main contrib\n")
 	kurjun := []byte("deb http://" + config.CDN.URL + ":8080/kurjun/rest/apt /\n")
 	log.Check(log.DebugLevel, "Writing apt source kurjun list",
-		ioutil.WriteFile(config.Agent.LxcPrefix+name+"/rootfs/etc/apt/sources.list.d/subutai-repo.list", kurjun, 0644))
+		ioutil.WriteFile(config.Agent.LxcPrefix+"containers/"+name+"/rootfs/etc/apt/sources.list.d/subutai-repo.list", kurjun, 0644))
 }
 
 // AddMetadata adds container information to database
@@ -114,10 +115,11 @@ func AddMetadata(name string, meta map[string]string) error {
 
 // Start starts the Subutai container.
 func Start(name string) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 	log.Check(log.DebugLevel, "Starting LXC container "+name, c.Start())
 	if c.State().String() != "RUNNING" {
 		return errors.New("Unable to start container " + name)
@@ -129,11 +131,12 @@ func Start(name string) error {
 // Stop stops the Subutai container.
 func Stop(name string, addMetadata bool) error {
 
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 
 	log.Check(log.DebugLevel, "Stopping LXC container "+name, c.Stop())
 
@@ -150,10 +153,11 @@ func Stop(name string, addMetadata bool) error {
 
 // Freeze pause container processes
 func Freeze(name string) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 	if err = c.Freeze(); log.Check(log.DebugLevel, "Freezing container "+name, err) {
 		return err
 	}
@@ -163,11 +167,11 @@ func Freeze(name string) error {
 
 // Unfreeze unpause container processes
 func Unfreeze(name string) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix + "/containers")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
-
+	defer lxc.Release(c)
 	if err := c.Unfreeze(); log.Check(log.DebugLevel, "Unfreezing container "+name, err) {
 		return err
 	}
@@ -177,10 +181,11 @@ func Unfreeze(name string) error {
 
 // Dump creates container memory dump on disk
 func Dump(name string, stop bool) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 	options := lxc.CheckpointOptions{
 		Directory: config.Agent.LxcPrefix + "/" + name + "/checkpoint",
 		Verbose:   true,
@@ -201,10 +206,11 @@ func Dump(name string, stop bool) error {
 
 // DumpRestore restores container memory from dump on disk
 func DumpRestore(name string) error {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 	if err != nil {
 		return err
 	}
+	defer lxc.Release(c)
 	options := lxc.RestoreOptions{
 		Directory: config.Agent.LxcPrefix + "/" + name + "/checkpoint",
 		Verbose:   true,
@@ -218,7 +224,10 @@ func AttachExec(name string, command []string, env ...[]string) (output []string
 		return output, errors.New("Container does not exist")
 	}
 
-	container, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	container, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	if err == nil {
+		defer lxc.Release(container)
+	}
 	if container.State() != lxc.RUNNING || err != nil {
 		return output, errors.New("Container is " + container.State().String())
 	}
@@ -261,11 +270,12 @@ func AttachExec(name string, command []string, env ...[]string) (output []string
 // Destroy deletes the Subutai container.
 func DestroyContainer(name string) error {
 
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
 
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 
 	if c.State() == lxc.RUNNING {
 		if err = c.Stop(); log.Check(log.DebugLevel, "Stopping container", err) {
@@ -313,10 +323,10 @@ func DeleteTemplateInfoFromCache(name string) {
 
 // GetParent return a parent of the Subutai container.
 func GetParent(name string) string {
-	return GetConfigItem(config.Agent.LxcPrefix+name+"/config", "subutai.parent")
+	return GetConfigItem(config.Agent.LxcPrefix+"containers/"+name+"/config", "subutai.parent")
 }
 func GetProperty(templateOrContainerName string, propertyName string) string {
-	return GetConfigItem(config.Agent.LxcPrefix+templateOrContainerName+"/config", propertyName)
+	return GetConfigItem(config.Agent.LxcPrefix+"containers/"+templateOrContainerName+"/config", propertyName)
 }
 
 // Clone create the duplicate container from the Subutai template.
@@ -324,10 +334,12 @@ func Clone(parent, child string) error {
 	var backend lxc.BackendStore
 	log.Check(log.DebugLevel, "Setting LXC backend to BTRFS", backend.Set("btrfs"))
 
-	c, err := lxc.NewContainer(parent, config.Agent.LxcPrefix)
+	//TODO copy template to container and then clone it, remove copied template
+	c, err := lxc.NewContainer(parent, config.Agent.LxcPrefix+"/templates")
 	if log.Check(log.DebugLevel, "Creating container object", err) {
 		return err
 	}
+	defer lxc.Release(c)
 
 	fs.SubvolumeCreate(config.Agent.LxcPrefix + child)
 	err = c.Clone(child, lxc.CloneOptions{Backend: backend})
@@ -371,7 +383,10 @@ func ResetNet(name string) {
 // QuotaRAM sets the memory quota to the Subutai container.
 // If quota size argument is missing, it's just return current value.
 func QuotaRAM(name string, size ...string) int {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	if err == nil {
+		defer lxc.Release(c)
+	}
 	log.Check(log.DebugLevel, "Looking for container: "+name, err)
 	i, err := strconv.Atoi(size[0])
 	log.Check(log.DebugLevel, "Parsing quota size", err)
@@ -388,7 +403,10 @@ func QuotaRAM(name string, size ...string) int {
 // If passed value < 100, we assume that this value mean percents.
 // If passed value > 100, we assume that this value mean MHz.
 func QuotaCPU(name string, size ...string) int {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	if err == nil {
+		defer lxc.Release(c)
+	}
 	log.Check(log.DebugLevel, "Looking for container: "+name, err)
 	cfsPeriod := 100000
 	tmp, err := strconv.Atoi(size[0])
@@ -428,7 +446,10 @@ func QuotaCPU(name string, size ...string) int {
 
 // QuotaCPUset sets particular cores that can be used by the Subutai container.
 func QuotaCPUset(name string, size ...string) string {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	if err == nil {
+		defer lxc.Release(c)
+	}
 	log.Check(log.DebugLevel, "Looking for container: "+name, err)
 	if size[0] != "" {
 		log.Check(log.DebugLevel, "Setting cpuset.cpus", c.SetCgroupItem("cpuset.cpus", size[0]))
@@ -439,7 +460,10 @@ func QuotaCPUset(name string, size ...string) string {
 
 // QuotaNet sets network bandwidth for the Subutai container.
 func QuotaNet(name string, size ...string) string {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	if err == nil {
+		defer lxc.Release(c)
+	}
 	log.Check(log.DebugLevel, "Looking for container: "+name, err)
 	nic := GetConfigItem(c.ConfigFileName(), "lxc.network.veth.pair")
 	if size[0] != "" {

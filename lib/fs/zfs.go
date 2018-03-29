@@ -13,6 +13,11 @@ func IsDatasetReadOnly(dataset string) bool {
 	return output == "on"
 }
 
+func SetDatasetReadOnly(dataset string) {
+	out, err := exec.Command("/bin/bash", "-c", "zfs set readonly=on "+dataset).CombinedOutput()
+	log.Check(log.ErrorLevel, "Setting zfs readonly property "+string(out), err)
+}
+
 func RemoveDataset(dataset string) {
 	out, err := exec.Command("/bin/bash", "-c", "zfs destroy -r "+dataset).CombinedOutput()
 	log.Check(log.ErrorLevel, "Removing zfs dataset "+string(out), err)

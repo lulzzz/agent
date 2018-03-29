@@ -238,7 +238,7 @@ func genericResponse(req RequestOptions) ResponseOptions {
 func AttachContainer(name string, req RequestOptions, outCh chan<- ResponseOptions) error {
 	defer close(outCh)
 
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+ "/containers")
 	if err != nil {
 		return err
 	}

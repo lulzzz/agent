@@ -561,6 +561,8 @@ func LxcImport(name, token string, local bool, auxDepList ...string) {
 		{"lxc.mount.entry", config.Agent.LxcPrefix + "templates/" + t.Name + "/var var none bind,rw 0 0"},
 	})
 
+	fs.SetDatasetReadOnly("subutai/fs/templates/" + t.Name)
+
 	if t.Id != "" {
 		cacheTemplateInfo(t)
 	}
