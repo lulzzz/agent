@@ -34,6 +34,6 @@ func CreateDataset(dataset string) {
 }
 
 func ReceiveStream(delta string, destDataset string) {
-	out, err := exec.Command("/bin/bash", "-c", "cat "+delta+" | zfs receive "+destDataset).CombinedOutput()
+	out, err := exec.Command("/bin/bash", "-c", "zfs receive "+destDataset+" < "+delta).CombinedOutput()
 	log.Check(log.ErrorLevel, "Creating zfs stream "+string(out), err)
 }
