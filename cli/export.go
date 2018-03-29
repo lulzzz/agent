@@ -94,8 +94,6 @@ func LxcExport(name, version, prefsize, token, description string, private bool,
 		{"subutai.template.owner", owner},
 		{"subutai.template.version", version},
 		{"subutai.template.size", size},
-		{"subutai.template.package", config.Agent.LxcPrefix + "tmpdir/" + name +
-			"-subutai-template_" + version + "_" + runtime.GOARCH + ".tar.gz"},
 	}
 
 	if len(description) != 0 {

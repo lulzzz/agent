@@ -29,11 +29,11 @@ func All() []string {
 
 // IsTemplate checks if Subutai container is template.
 func IsTemplate(name string) bool {
-	return fs.IsSubvolumeReadonly(config.Agent.LxcPrefix + name + "/rootfs/")
+	return fs.FileExists(config.Agent.LxcPrefix + "templates/" + name)
 }
 
 func IsContainer(name string) bool {
-	return fs.IsSubvolumeReadWrite(config.Agent.LxcPrefix + name + "/rootfs/")
+	return fs.FileExists(config.Agent.LxcPrefix + "containers/" + name)
 }
 
 // Templates returns list of all templates
@@ -290,8 +290,7 @@ func DestroyTemplate(name string) {
 
 	log.Info("Destroying template " + name)
 
-	//remove files
-	fs.SubvolumeDestroy(config.Agent.LxcPrefix + name)
+	fs.RemoveDataset("subutai/fs/templates/" + name)
 
 	DeleteTemplateInfoFromCache(name)
 }
@@ -451,7 +450,7 @@ func QuotaNet(name string, size ...string) string {
 
 // SetContainerConf sets any parameter in the configuration file of the Subutai container.
 func SetContainerConf(container string, conf [][]string) error {
-	confPath := config.Agent.LxcPrefix + container + "/config"
+	confPath := config.Agent.LxcPrefix + "containers/" + container + "/config"
 	newconf := ""
 
 	file, err := os.Open(confPath)

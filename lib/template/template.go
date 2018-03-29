@@ -11,27 +11,22 @@ import (
 )
 
 // Install deploys downloaded and unpacked templates to the system
-func Install(parent, child string) {
-	delta := map[string][]string{
-		child + "/deltas/rootfs.delta": {parent + "/rootfs", child},
-		child + "/deltas/home.delta":   {parent + "/home", child},
-		child + "/deltas/opt.delta":    {parent + "/opt", child},
-		child + "/deltas/var.delta":    {parent + "/var", child},
+func Install(child string) {
+	datasets := map[string]string{
+		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/rootfs.delta": "subutai/fs/templates/" + child + "/rootfs",
+		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/homefs.delta": "subutai/fs/templates/" + child + "/home",
+		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/optfs.delta":  "subutai/fs/templates/" + child + "/opt",
+		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/varfs.delta":  "subutai/fs/templates/" + child + "/var",
 	}
 
-	fs.SubvolumeCreate(config.Agent.LxcPrefix + child)
+	fs.CreateDataset("subutai/fs/templates/" + child)
 
-	p := true
-	if parent == child || parent == "" {
-		p = false
-	}
-
-	for delta, path := range delta {
-		fs.Receive(config.Agent.LxcPrefix+path[0], config.Agent.LxcPrefix+path[1], delta, p)
+	for delta, dataset := range datasets {
+		fs.ReceiveStream(delta, dataset)
 	}
 
 	for _, file := range []string{"config", "fstab", "packages"} {
-		fs.Copy(config.Agent.LxcPrefix+"tmpdir/"+child+"/"+file, config.Agent.LxcPrefix+child+"/"+file)
+		fs.Copy(config.Agent.LxcPrefix+"tmpdir/"+child+"/"+file, config.Agent.LxcPrefix+"templates/"+child+"/"+file)
 	}
 }
 
