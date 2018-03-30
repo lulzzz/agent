@@ -285,6 +285,8 @@ func DestroyContainer(name string) error {
 
 	log.Info("Destroying container " + name)
 
+	c.Destroy()
+
 	fs.SubvolumeDestroy(config.Agent.LxcPrefix + name)
 
 	bolt, err := db.New()
