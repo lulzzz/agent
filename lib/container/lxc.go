@@ -312,7 +312,7 @@ func DestroyTemplate(name string) {
 
 	log.Info("Destroying template " + name)
 
-	log.Check(log.ErrorLevel, "Destroying lxc", c.Destroy())
+	log.Check(log.DebugLevel, "Destroying lxc", c.Destroy())
 
 	fs.RemoveDataset("subutai/fs/" + name)
 
