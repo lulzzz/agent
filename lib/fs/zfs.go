@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"strings"
 	"github.com/subutai-io/agent/log"
+	"github.com/subutai-io/agent/agent/utils"
 )
 
 func IsDatasetReadOnly(dataset string) bool {
@@ -46,9 +47,10 @@ func CreateDataset(dataset string) {
 	log.Check(log.ErrorLevel, "Creating zfs dataset "+dataset+"\n"+string(out), err)
 }
 
-//have to use bash shell to send piped command
 func ReceiveStream(delta string, destDataset string) {
-	out, err := exec.Command("/bin/bash", "-c", "zfs receive "+destDataset+" < "+delta).CombinedOutput()
+	cat := exec.Command("cat", delta)
+	receive := exec.Command("zfs", "receive", destDataset)
+	out, err := utils.RunPipedCommands(cat, receive)
 	log.Check(log.ErrorLevel, "Creating zfs stream "+destDataset+" < "+delta+"\n"+string(out), err)
 }
 

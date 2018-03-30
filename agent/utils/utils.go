@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"os/exec"
 )
 
 var (
@@ -261,8 +262,6 @@ func CleanTemplateName(name string) string {
 	return reg.ReplaceAllString(name, "")
 }
 
-
-
 func MatchRegexGroups(regEx *regexp.Regexp, url string) (paramsMap map[string]string) {
 
 	match := regEx.FindStringSubmatch(url)
@@ -274,4 +273,26 @@ func MatchRegexGroups(regEx *regexp.Regexp, url string) (paramsMap map[string]st
 		}
 	}
 	return
+}
+
+func RunPipedCommands(commands ...*exec.Cmd) ([]byte, error) {
+	for i, command := range commands[:len(commands)-1] {
+		out, err := command.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		command.Start()
+		commands[i+1].Stdin = out
+	}
+
+	final, err := commands[len(commands)-1].Output()
+
+	for _, command := range commands {
+		command.Wait()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return final, nil
 }
