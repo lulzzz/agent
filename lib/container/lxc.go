@@ -68,7 +68,7 @@ func ContainerOrTemplateExists(name string) bool {
 
 // State returns container stat in human readable format.
 func State(name string) (state string) {
-	if c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers"); err == nil {
+	if c, err := lxc.NewContainer(name, config.Agent.LxcPrefix); err == nil {
 		defer lxc.Release(c)
 		return c.State().String()
 	}
@@ -300,7 +300,19 @@ func DestroyContainer(name string) error {
 
 func DestroyTemplate(name string) {
 
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
+
+	log.Check(log.ErrorLevel, "Creating container object", err)
+
+	defer lxc.Release(c)
+
+	if c.State() == lxc.RUNNING {
+		log.Check(log.ErrorLevel, "Stopping container", c.Stop())
+	}
+
 	log.Info("Destroying template " + name)
+
+	log.Check(log.ErrorLevel, "Destroying lxc", c.Destroy())
 
 	fs.RemoveDataset("subutai/fs/" + name)
 
