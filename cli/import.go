@@ -535,11 +535,11 @@ func LxcImport(name, token string, local bool, auxDepList ...string) {
 
 	template.Install(t.Name)
 
-	log.Check(log.FatalLevel, "Removing temp dir "+templdir, os.RemoveAll(templdir))
+	//log.Check(log.FatalLevel, "Removing temp dir "+templdir, os.RemoveAll(templdir))
 
 	//delete template archive
-	templateArchive := config.Agent.LxcPrefix + "tmpdir/" + t.File
-	log.Check(log.WarnLevel, "Removing file: "+templateArchive, os.Remove(templateArchive))
+	//templateArchive := config.Agent.LxcPrefix + "tmpdir/" + t.File
+	//log.Check(log.WarnLevel, "Removing file: "+templateArchive, os.Remove(templateArchive))
 
 	if t.Name == "management" {
 		template.MngInit()
