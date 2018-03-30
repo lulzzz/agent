@@ -9,12 +9,13 @@ import (
 func IsDatasetReadOnly(dataset string) bool {
 	out, err := exec.Command("/bin/bash", "-c", "zfs get readonly -H "+dataset+" | awk '{print $3}' ").CombinedOutput()
 	output := strings.TrimSpace(string(out))
-	log.Check(log.FatalLevel, "Getting zfs readonly property "+output, err)
+	log.Check(log.FatalLevel, "Getting zfs dataset readonly property "+dataset+"\n"+output, err)
 	return output == "on"
 }
 
 func DatasetExists(dataset string) bool {
-	_, err := exec.Command("/bin/bash", "-c", "zfs list -H "+dataset).CombinedOutput()
+	out, err := exec.Command("/bin/bash", "-c", "zfs list -H "+dataset).CombinedOutput()
+	log.Check(log.DebugLevel, "Checking zfs dataset existence "+dataset+"\n"+string(out), err)
 	return err == nil
 }
 
@@ -36,4 +37,9 @@ func CreateDataset(dataset string) {
 func ReceiveStream(delta string, destDataset string) {
 	out, err := exec.Command("/bin/bash", "-c", "zfs receive "+destDataset+" < "+delta).CombinedOutput()
 	log.Check(log.ErrorLevel, "Creating zfs stream "+destDataset+" < "+delta+"\n"+string(out), err)
+}
+
+func SetMountpoint(dataset string, mountpoint string) {
+	out, err := exec.Command("/bin/bash", "-c", "zfs set mountpoint="+mountpoint+" "+dataset).CombinedOutput()
+	log.Check(log.ErrorLevel, "Setting mountpoint to dataset "+mountpoint+" -> "+dataset+"\n"+string(out), err)
 }

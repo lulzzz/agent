@@ -13,16 +13,18 @@ import (
 // Install deploys downloaded and unpacked templates to the system
 func Install(child string) {
 	datasets := map[string]string{
-		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/rootfs.delta": "subutai/fs/" + child + "/rootfs",
-		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/homefs.delta": "subutai/fs/" + child + "/home",
-		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/optfs.delta":  "subutai/fs/" + child + "/opt",
-		config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/varfs.delta":  "subutai/fs/" + child + "/var",
+		"rootfs.delta": "rootfs",
+		"homefs.delta": "home",
+		"optfs.delta":  "opt",
+		"varfs.delta":  "var",
+		//config.Agent.LxcPrefix + "tmpdir/" + child + "/deltas/varfs.delta":  "subutai/fs/" + child + "/var",
 	}
 
 	fs.CreateDataset("subutai/fs/" + child)
 
 	for delta, dataset := range datasets {
-		fs.ReceiveStream(delta, dataset)
+		fs.ReceiveStream(config.Agent.LxcPrefix+"tmpdir/"+child+"/deltas/"+delta, "subutai/fs/"+child+"/"+dataset)
+		fs.SetMountpoint("subutai/fs/"+child+"/"+dataset, config.Agent.LxcPrefix+child+"/"+dataset)
 	}
 
 	for _, file := range []string{"config", "fstab", "packages"} {
