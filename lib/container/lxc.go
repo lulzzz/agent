@@ -285,7 +285,7 @@ func DestroyContainer(name string) error {
 
 	log.Info("Destroying container " + name)
 
-	c.Destroy()
+	log.Check(log.DebugLevel, "Destroying lxc", c.Destroy())
 
 	fs.SubvolumeDestroy(config.Agent.LxcPrefix + name)
 
