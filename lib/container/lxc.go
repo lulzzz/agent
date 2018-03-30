@@ -24,7 +24,7 @@ import (
 
 // All returns list of all containers
 func All() []string {
-	return lxc.DefinedContainerNames(config.Agent.LxcPrefix)
+	return lxc.DefinedContainerNames(config.Agent.LxcPrefix+"templates", config.Agent.LxcPrefix+"containers")
 }
 
 // IsTemplate checks if Subutai container is template.
