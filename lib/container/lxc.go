@@ -29,11 +29,11 @@ func All() []string {
 
 // IsTemplate checks if Subutai container is template.
 func IsTemplate(name string) bool {
-	return fs.IsSubvolumeReadonly(config.Agent.LxcPrefix + name + "/rootfs/")
+	return fs.DatasetExists("subutai/fs/"+name) && fs.IsDatasetReadOnly("subutai/fs/"+name)
 }
 
 func IsContainer(name string) bool {
-	return fs.IsSubvolumeReadWrite(config.Agent.LxcPrefix + name + "/rootfs/")
+	return fs.DatasetExists("subutai/fs/"+name) && !fs.IsDatasetReadOnly("subutai/fs/" + name)
 }
 
 // Templates returns list of all templates
