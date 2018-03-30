@@ -399,7 +399,7 @@ func LxcImport(name, token string, local bool, auxDepList ...string) {
 			return
 		}
 
-		existingVersion := container.GetConfigItem(config.Agent.LxcPrefix+"templates/"+t.Name+"/config", "subutai.template.version")
+		existingVersion := container.GetConfigItem(config.Agent.LxcPrefix+t.Name+"/config", "subutai.template.version")
 
 		//latest version is already installed
 		if version.Compare(t.Version, existingVersion, "<=") {
@@ -535,33 +535,33 @@ func LxcImport(name, token string, local bool, auxDepList ...string) {
 
 	template.Install(t.Name)
 
-	//log.Check(log.FatalLevel, "Removing temp dir "+templdir, os.RemoveAll(templdir))
+	log.Check(log.FatalLevel, "Removing temp dir "+templdir, os.RemoveAll(templdir))
 
 	//delete template archive
-	//templateArchive := config.Agent.LxcPrefix + "tmpdir/" + t.File
-	//log.Check(log.WarnLevel, "Removing file: "+templateArchive, os.Remove(templateArchive))
+	templateArchive := config.Agent.LxcPrefix + "tmpdir/" + t.File
+	log.Check(log.WarnLevel, "Removing file: "+templateArchive, os.Remove(templateArchive))
 
 	if t.Name == "management" {
 		template.MngInit()
 		return
 	}
 
-	container.SetTemplateConf(t.Name, [][]string{
+	container.SetContainerConf(t.Name, [][]string{
 		{"lxc.include", ""},
-		{"lxc.rootfs", config.Agent.LxcPrefix + "templates/" + t.Name + "/rootfs"},
-		{"lxc.rootfs.mount", config.Agent.LxcPrefix + "templates/" + t.Name + "/rootfs"},
-		{"lxc.mount", config.Agent.LxcPrefix + "templates/" + t.Name + "/fstab"},
+		{"lxc.rootfs", config.Agent.LxcPrefix + t.Name + "/rootfs"},
+		{"lxc.rootfs.mount", config.Agent.LxcPrefix + t.Name + "/rootfs"},
+		{"lxc.mount", config.Agent.LxcPrefix + t.Name + "/fstab"},
 		{"lxc.hook.pre-start", ""},
 		{"lxc.include", config.Agent.AppPrefix + "share/lxc/config/ubuntu.common.conf"},
 		{"lxc.include", config.Agent.AppPrefix + "share/lxc/config/ubuntu.userns.conf"},
 		{"subutai.config.path", config.Agent.AppPrefix + "etc"},
 		{"lxc.network.script.up", config.Agent.AppPrefix + "bin/create_ovs_interface"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + "templates/" + t.Name + "/home home none bind,rw 0 0"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + "templates/" + t.Name + "/opt opt none bind,rw 0 0"},
-		{"lxc.mount.entry", config.Agent.LxcPrefix + "templates/" + t.Name + "/var var none bind,rw 0 0"},
+		{"lxc.mount.entry", config.Agent.LxcPrefix + t.Name + "/home home none bind,rw 0 0"},
+		{"lxc.mount.entry", config.Agent.LxcPrefix + t.Name + "/opt opt none bind,rw 0 0"},
+		{"lxc.mount.entry", config.Agent.LxcPrefix + t.Name + "/var var none bind,rw 0 0"},
 	})
 
-	fs.SetDatasetReadOnly("subutai/fs/templates/" + t.Name)
+	fs.SetDatasetReadOnly("subutai/fs/" + t.Name)
 
 	if t.Id != "" {
 		cacheTemplateInfo(t)

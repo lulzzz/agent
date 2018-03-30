@@ -15,7 +15,7 @@ import (
 // otherwise command will return error message and non-zero exit code.
 func LxcAttach(name string, cmd []string) {
 	log.Debug("Attaching to container " + name)
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix+"/containers")
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
 	log.Check(log.ErrorLevel, "Creating container object", err)
 	defer lxc.Release(c)
 	options := lxc.DefaultAttachOptions

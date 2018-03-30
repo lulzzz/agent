@@ -81,7 +81,7 @@ func LxcClone(parent, child, envID, addr, consoleSecret, cdnToken string) {
 
 	LxcStart(child)
 
-	meta["interface"] = container.GetConfigItem(config.Agent.LxcPrefix+"containers/"+child+"/config", "lxc.network.veth.pair")
+	meta["interface"] = container.GetConfigItem(config.Agent.LxcPrefix+child+"/config", "lxc.network.veth.pair")
 
 	bolt, err := db.New()
 	log.Check(log.WarnLevel, "Opening database", err)
@@ -113,8 +113,8 @@ func addNetConf(name, addr string) {
 
 func getEnvGw(vlan string) string {
 	for _, v := range container.Containers() {
-		if container.GetConfigItem(config.Agent.LxcPrefix+"containers/"+v+"/config", "#vlan_id") == vlan {
-			return container.GetConfigItem(config.Agent.LxcPrefix+"containers/"+v+"/config", "lxc.network.ipv4.gateway")
+		if container.GetConfigItem(config.Agent.LxcPrefix+v+"/config", "#vlan_id") == vlan {
+			return container.GetConfigItem(config.Agent.LxcPrefix+v+"/config", "lxc.network.ipv4.gateway")
 		}
 	}
 	return ""

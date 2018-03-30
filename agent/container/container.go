@@ -174,7 +174,7 @@ func interfaces(name string, staticIp string) []utils.Iface {
 	if staticIp != "" {
 		iface.IP = staticIp
 	} else {
-		c, err := lxc.NewContainer(name, config.Agent.LxcPrefix + "/containers")
+		c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
 		if err == nil {
 			defer lxc.Release(c)
 			listip, err := c.IPAddress(iface.InterfaceName)

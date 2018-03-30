@@ -117,7 +117,7 @@ func addAncestors(list []string) []string {
 
 // info adds container's IP and NIC to list
 func info(name string) (result []string) {
-	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix + "/containers")
+	c, err := lxc.NewContainer(name, config.Agent.LxcPrefix)
 	log.Check(log.FatalLevel, "Looking for container "+name, err)
 	defer lxc.Release(c)
 	nic := "eth0"
